@@ -1,0 +1,25 @@
+{
+  "name": "COA Study Sprint",
+  "short_name": "COA Sprint",
+  "description": "Beginner-friendly Computer Organization and Architecture study app with lessons, 2/5/10-mark practice, step-by-step numericals, and interactive COA labs.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f8f7f4",
+  "theme_color": "#0f766e",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
