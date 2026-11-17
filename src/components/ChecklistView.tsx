@@ -60,6 +60,15 @@ export const ChecklistView: React.FC<Props> = ({
 
   return (
     <div className="space-y-5">
+      <div>
+        <h1 className="text-lg sm:text-xl font-semibold text-slate-900">
+          Exam Checklist &amp; Question Bank
+        </h1>
+        <p className="mt-0.5 text-xs sm:text-sm text-slate-600">
+          Focus on topics shared by 5- and 10-mark sections first, or browse all 90 questions.
+        </p>
+      </div>
+
       {/* Top Tab Switcher */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-xs">
@@ -122,6 +131,7 @@ export const ChecklistView: React.FC<Props> = ({
       {/* TAB 1: HIGH-YIELD PRIORITY SPRINT */}
       {tab === 'high-yield' && (
         <div className="space-y-4">
+          <h2 className="sr-only">High-Yield Priority Topics</h2>
           <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-xs sm:text-sm text-amber-950">
             <span className="font-semibold">Exam Sprint Strategy:</span> These{' '}
             {HIGH_YIELD_TOPICS.length} topics repeat across the 5-mark and 10-mark sections in{' '}

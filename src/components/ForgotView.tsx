@@ -103,11 +103,11 @@ export const ForgotView: React.FC<Props> = ({
       {!focusView && (
         <aside className="lg:col-span-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
           <div>
-            <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-rose-700">
+            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-rose-700">
               <RotateCcw className="h-3.5 w-3.5" />
               Forgot-This Review Queue ({missedQuestions.length})
-            </h2>
-            <p className="mt-1 text-xs text-slate-500">
+            </p>
+            <p className="mt-1 text-xs text-slate-600">
               Retry each missed question in your own words until it feels familiar.
             </p>
           </div>

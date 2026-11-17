@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
   BookOpen,
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { StudyProgress, StudySessionStep } from '../types';
 import { buildTimedStudySession, type SessionDuration } from '../utils/sessionBuilder';
+import { useDialogA11y } from '../utils/useDialogA11y';
 
 interface Props {
   open: boolean;
@@ -28,6 +29,8 @@ export const SessionPlannerModal: React.FC<Props> = ({
   onLaunchStep,
 }) => {
   const [duration, setDuration] = useState<SessionDuration>(20);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(open, dialogRef, onClose);
 
   const steps = useMemo(
     () => buildTimedStudySession(duration, progress),
@@ -54,6 +57,8 @@ export const SessionPlannerModal: React.FC<Props> = ({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="w-full sm:max-w-xl max-h-[88vh] flex flex-col rounded-t-2xl sm:rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >

@@ -129,8 +129,8 @@ export const LessonsView: React.FC<Props> = ({
               <p className="text-[11px] font-semibold uppercase tracking-wider text-teal-700">
                 Unit {unitMeta?.roman} Learning Path
               </p>
-              <h2 className="mt-0.5 text-sm font-semibold text-slate-900">{unitMeta?.title}</h2>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-0.5 text-sm font-semibold text-slate-900">{unitMeta?.title}</p>
+              <p className="mt-1 text-xs text-slate-600">
                 Ordered from foundational basics to exam topics.
               </p>
             </div>

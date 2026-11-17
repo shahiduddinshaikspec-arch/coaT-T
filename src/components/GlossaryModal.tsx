@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { BookMarked, Search, X } from 'lucide-react';
 import { GLOSSARY } from '../data/glossary';
 import type { GlossaryEntry } from '../types';
+import { useDialogA11y } from '../utils/useDialogA11y';
 import { ReadAloudButton } from './ReadAloudButton';
 
 interface Props {
@@ -19,6 +20,12 @@ export const GlossaryModal: React.FC<Props> = ({
 }) => {
   const [search, setSearch] = useState('');
   const [showAll, setShowAll] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useDialogA11y(open, dialogRef, () => {
+    setShowAll(false);
+    onClose();
+  });
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -44,6 +51,8 @@ export const GlossaryModal: React.FC<Props> = ({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="w-full sm:max-w-lg max-h-[85vh] flex flex-col rounded-t-2xl sm:rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >

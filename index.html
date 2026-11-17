@@ -3,7 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="COA Study Sprint — Beginner-friendly Computer Organization and Architecture study app with lessons, 2/5/10-mark practice, step-by-step numericals, high-yield checklist, and optional Gemini tutor."
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f766e'/%3E%3Crect x='9' y='9' width='14' height='14' rx='2' fill='none' stroke='%23ffffff' stroke-width='2.2'/%3E%3Crect x='13' y='13' width='6' height='6' fill='%23ffffff'/%3E%3C/svg%3E"
+    />
     <title>COA Study Sprint — Computer Organization & Architecture</title>
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('coa-study-sprint-v1');
+          if (!raw) return;
+          var parsed = JSON.parse(raw);
+          var prefs = parsed && parsed.preferences;
+          if (!prefs) return;
+          var html = document.documentElement;
+          if (prefs.theme === 'dark') html.classList.add('dark');
+          if (prefs.fontScale === 'large') html.classList.add('font-scale-large');
+          if (prefs.fontScale === 'xlarge') html.classList.add('font-scale-xlarge');
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body class="bg-[#F8F7F4] text-slate-800 antialiased selection:bg-teal-100 selection:text-teal-900">
     <div id="root"></div>

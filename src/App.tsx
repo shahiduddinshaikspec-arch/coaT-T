@@ -67,13 +67,15 @@ export function App() {
   const [showResumeBanner, setShowResumeBanner] = useState<boolean>(() => hasSavedSession());
   const [view, setView] = useState<AppView>('home');
 
-  // Navigation sub-states
-  const [selectedLessonUnit, setSelectedLessonUnit] = useState<number>(
-    () => progress.lastActivity?.unit || 1
-  );
-  const [selectedLessonId, setSelectedLessonId] = useState<string>(
-    () => progress.lastActivity?.lessonId || LESSONS[0].id
-  );
+  // Navigation sub-states (keep initial lesson unit and lesson ID strictly in sync)
+  const initialLesson =
+    (progress.lastActivity?.lessonId &&
+      LESSONS.find((l) => l.id === progress.lastActivity?.lessonId)) ||
+    (progress.lastActivity?.unit &&
+      LESSONS.find((l) => l.unit === progress.lastActivity?.unit)) ||
+    LESSONS[0];
+  const [selectedLessonUnit, setSelectedLessonUnit] = useState<number>(initialLesson.unit);
+  const [selectedLessonId, setSelectedLessonId] = useState<string>(initialLesson.id);
 
   const [practiceMarks, setPracticeMarks] = useState<2 | 5 | 10>(
     () => progress.lastActivity?.practiceMarks || 2
@@ -415,9 +417,9 @@ export function App() {
             </div>
           </button>
 
-          {/* Desktop Nav Tabs (hidden in low-distraction focus view) */}
+          {/* Desktop Nav Tabs (hidden below lg and in low-distraction focus view) */}
           {!isFocusActive ? (
-            <nav aria-label="Main navigation" className="hidden md:flex items-center gap-0.5">
+            <nav aria-label="Main navigation" className="hidden lg:flex items-center gap-0.5">
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
                 const active = view === item.id;
@@ -426,14 +428,15 @@ export function App() {
                   <button
                     key={item.id}
                     type="button"
+                    aria-current={active ? 'page' : undefined}
                     onClick={() => handleNavigate(item.id)}
-                    className={`relative inline-flex items-center gap-1.5 rounded-xl px-2.5 lg:px-3 py-2 text-xs lg:text-sm font-medium transition-colors cursor-pointer ${
+                    className={`relative inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
                       active
                         ? 'bg-teal-50 text-teal-900'
                         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                     }`}
                   >
-                    <Icon className={`h-4 w-4 ${active ? 'text-teal-700' : 'text-slate-400'}`} />
+                    <Icon className={`h-4 w-4 ${active ? 'text-teal-700' : 'text-slate-500'}`} />
                     {item.label}
                     {badge > 0 && (
                       <span className="ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
@@ -448,7 +451,7 @@ export function App() {
             <button
               type="button"
               onClick={() => handleUpdatePreferences({ focusView: false })}
-              className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-800 hover:bg-indigo-100 cursor-pointer"
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-800 hover:bg-indigo-100 cursor-pointer whitespace-nowrap"
             >
               <EyeOff className="h-3.5 w-3.5" />
               Exit Focus View
@@ -456,15 +459,15 @@ export function App() {
           )}
 
           {/* Right Controls: Optional AI Tutor + Reading Comfort + Calm Focus Timer */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={() => setTutorOpen(true)}
-              aria-label="Open optional AI Tutor"
-              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs sm:text-sm font-medium transition-colors cursor-pointer ${
+              aria-label="AI Tutor, optional Gemini assistant"
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs sm:text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 progress.preferences.aiTutorEnabled
                   ? 'border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100/70'
-                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
               }`}
             >
               <Sparkles className="h-3.5 w-3.5 text-teal-600" />
@@ -474,14 +477,30 @@ export function App() {
               preferences={progress.preferences}
               onUpdatePreferences={handleUpdatePreferences}
               onOpenGlossaryBrowser={handleOpenGlossaryBrowser}
+              onResetAllProgress={handleResetAllProgress}
             />
             <FocusTimer />
           </div>
         </div>
+
+        {/* Dedicated mobile exit bar when Low-Distraction Focus View is active (zero header crowding at 390px) */}
+        {isFocusActive && (
+          <div className="sm:hidden border-t border-indigo-200 bg-indigo-50 px-4 py-2 flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-indigo-900">Low-Distraction Focus View</span>
+            <button
+              type="button"
+              onClick={() => handleUpdatePreferences({ focusView: false })}
+              className="inline-flex items-center gap-1 rounded-full border border-indigo-300 bg-white px-3 py-1 text-xs font-semibold text-indigo-900 hover:bg-indigo-100 cursor-pointer whitespace-nowrap"
+            >
+              <EyeOff className="h-3.5 w-3.5" />
+              Exit Focus View
+            </button>
+          </div>
+        )}
       </header>
 
       {/* Main Content */}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-5 pb-24 sm:px-6 md:pb-10">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-5 pb-24 sm:px-6 lg:pb-10">
         {view === 'home' && (
           <HomeView
             progress={progress}
@@ -588,9 +607,9 @@ export function App() {
         )}
       </main>
 
-      {/* Subtle Offline Footer (hidden in focus view) */}
+      {/* Subtle Offline Footer (hidden below lg and in focus view) */}
       {!isFocusActive && (
-        <footer className="hidden md:block border-t border-slate-200/80 bg-white/70 py-4 text-xs text-slate-500">
+        <footer className="hidden lg:block border-t border-slate-200/80 bg-white/70 py-4 text-xs text-slate-600">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-6">
             <span>
               COA Study Sprint · 100% local & offline · Lessons, drafts, checklists, and missed items save automatically.
@@ -598,7 +617,7 @@ export function App() {
             <button
               type="button"
               onClick={handleResetAllProgress}
-              className="text-slate-400 hover:text-rose-700 hover:underline cursor-pointer"
+              className="text-slate-600 hover:text-rose-700 hover:underline cursor-pointer"
             >
               Reset saved progress
             </button>
@@ -606,11 +625,11 @@ export function App() {
         </footer>
       )}
 
-      {/* Mobile Bottom Navigation Bar */}
+      {/* Mobile & Tablet Bottom Navigation Bar */}
       {!isFocusActive && (
         <nav
           aria-label="Mobile navigation"
-          className="fixed bottom-0 inset-x-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-xs md:hidden"
+          className="fixed bottom-0 inset-x-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-xs lg:hidden"
         >
           <div className="grid grid-cols-6">
             {NAV_ITEMS.map((item) => {
@@ -621,9 +640,10 @@ export function App() {
                 <button
                   key={item.id}
                   type="button"
+                  aria-current={active ? 'page' : undefined}
                   onClick={() => handleNavigate(item.id)}
-                  className={`relative flex flex-col items-center justify-center py-2 text-[10px] font-medium cursor-pointer ${
-                    active ? 'text-teal-700' : 'text-slate-500'
+                  className={`relative flex flex-col items-center justify-center py-2 text-[11px] font-medium cursor-pointer ${
+                    active ? 'text-teal-700' : 'text-slate-600'
                   }`}
                 >
                   <div className="relative">

@@ -338,7 +338,7 @@ export const HomeView: React.FC<Props> = ({
           </div>
           <div className="mt-1.5 text-xl font-semibold text-slate-900">
             {progress.completedLessons.length}{' '}
-            <span className="text-sm font-normal text-slate-400">/ {totalLessons}</span>
+            <span className="text-sm font-normal text-slate-600">/ {totalLessons}</span>
           </div>
         </button>
 
@@ -347,13 +347,13 @@ export const HomeView: React.FC<Props> = ({
           onClick={() => onNavigate('practice')}
           className="rounded-xl border border-slate-200 bg-white p-3.5 text-left hover:border-indigo-300 transition-colors cursor-pointer"
         >
-          <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
             <CheckCircle2 className="h-3.5 w-3.5 text-indigo-600" />
             Questions Known
           </div>
           <div className="mt-1.5 text-xl font-semibold text-slate-900">
             {progress.masteredQuestions.length}{' '}
-            <span className="text-sm font-normal text-slate-400">/ {totalQuestions}</span>
+            <span className="text-sm font-normal text-slate-600">/ {totalQuestions}</span>
           </div>
         </button>
 
@@ -362,13 +362,13 @@ export const HomeView: React.FC<Props> = ({
           onClick={() => onNavigate('numericals')}
           className="rounded-xl border border-slate-200 bg-white p-3.5 text-left hover:border-violet-300 transition-colors cursor-pointer"
         >
-          <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
             <Calculator className="h-3.5 w-3.5 text-violet-600" />
             Numericals Mastered
           </div>
           <div className="mt-1.5 text-xl font-semibold text-slate-900">
             {progress.masteredNumericals.length}{' '}
-            <span className="text-sm font-normal text-slate-400">/ {totalNumericals}</span>
+            <span className="text-sm font-normal text-slate-600">/ {totalNumericals}</span>
           </div>
         </button>
 
@@ -377,7 +377,7 @@ export const HomeView: React.FC<Props> = ({
           onClick={() => onNavigate(progress.forgotQuestions.length > 0 ? 'forgot' : 'checklist')}
           className="rounded-xl border border-slate-200 bg-white p-3.5 text-left hover:border-amber-300 transition-colors cursor-pointer"
         >
-          <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
             <ClipboardCheck className="h-3.5 w-3.5 text-amber-600" />
             {progress.forgotQuestions.length > 0 ? 'Forgot-This Queue' : 'High-Yield Ready'}
           </div>
@@ -387,7 +387,7 @@ export const HomeView: React.FC<Props> = ({
             ) : (
               <>
                 {progress.checkedHighYield.length}{' '}
-                <span className="text-sm font-normal text-slate-400">/ {totalHighYield}</span>
+                <span className="text-sm font-normal text-slate-600">/ {totalHighYield}</span>
               </>
             )}
           </div>
@@ -401,7 +401,7 @@ export const HomeView: React.FC<Props> = ({
             <h2 className="text-base sm:text-lg font-semibold text-slate-900">
               Five Course Units
             </h2>
-            <p className="text-xs sm:text-sm text-slate-500">
+            <p className="text-xs sm:text-sm text-slate-600">
               Learn the beginner lesson first, then recall 2M, 5M, and 10M answers in your own words.
             </p>
           </div>
@@ -468,6 +468,7 @@ export const HomeView: React.FC<Props> = ({
                 <div className="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2">
                   <button
                     type="button"
+                    aria-label={`Unit ${u.roman} Beginner Lessons`}
                     onClick={() => onOpenUnitLessons(u.unit)}
                     className="flex-1 rounded-xl bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800 transition-colors cursor-pointer"
                   >
@@ -475,6 +476,7 @@ export const HomeView: React.FC<Props> = ({
                   </button>
                   <button
                     type="button"
+                    aria-label={`Practice Unit ${u.roman} (18 Questions)`}
                     onClick={() => onOpenUnitPractice(u.unit, 2)}
                     className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
                   >

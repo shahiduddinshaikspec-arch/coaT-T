@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import type { TutorTopicContext } from '../utils/tutorContext';
+import { useDialogA11y } from '../utils/useDialogA11y';
 import { ReadAloudButton } from './ReadAloudButton';
 
 interface ChatMessage {
@@ -54,6 +55,8 @@ export const AiTutorPanel: React.FC<Props> = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(open, dialogRef, onClose);
 
   // Reset conversation whenever the grounded topic changes
   useEffect(() => {
@@ -170,6 +173,8 @@ export const AiTutorPanel: React.FC<Props> = ({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="w-full sm:max-w-md h-[88vh] sm:h-full flex flex-col border-t sm:border-t-0 sm:border-l border-slate-200 bg-white shadow-xl rounded-t-2xl sm:rounded-none overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >

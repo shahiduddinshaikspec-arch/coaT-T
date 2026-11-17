@@ -71,7 +71,13 @@ export const NumericalsView: React.FC<Props> = ({
     e.preventDefault();
     if (!activeStep) return;
     const norm = normalizeAnswer(stepInput);
-    if (!norm) return;
+    if (!norm) {
+      setStepFeedback({
+        status: 'wrong',
+        message: 'Type your answer for this step first, or click "Reveal Step" if you would like to see how it works.',
+      });
+      return;
+    }
 
     const accepted = activeStep.acceptedAnswers.map(normalizeAnswer);
     if (accepted.includes(norm)) {

@@ -19,6 +19,8 @@ export const FocusTimer: React.FC = () => {
   const [soundOn, setSoundOn] = useState(true);
   const [completedNotice, setCompletedNotice] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!running) return;
@@ -46,13 +48,26 @@ export const FocusTimer: React.FC = () => {
 
   useEffect(() => {
     if (!open) return;
+    closeBtnRef.current?.focus();
+
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
       }
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [open]);
 
   const handleSelectPreset = (nextPreset: PresetKey) => {
@@ -84,9 +99,11 @@ export const FocusTimer: React.FC = () => {
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label="Toggle focus timer"
+        aria-expanded={open}
+        aria-label={`${mins}:${secs} focus timer`}
         className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs sm:text-sm font-medium transition-colors cursor-pointer ${
           running
             ? phase === 'focus'
@@ -111,23 +128,32 @@ export const FocusTimer: React.FC = () => {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-4 shadow-lg z-50">
+        <div
+          role="dialog"
+          aria-label="Calm focus timer"
+          className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-4 shadow-lg z-50"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
               Calm Focus Timer
             </span>
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => setSoundOn((s) => !s)}
+                aria-label={soundOn ? 'Mute timer chime' : 'Enable timer chime'}
                 title={soundOn ? 'Mute chime' : 'Enable chime'}
                 className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
               >
                 {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
               </button>
               <button
+                ref={closeBtnRef}
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={() => {
+                  setOpen(false);
+                  triggerRef.current?.focus();
+                }}
                 aria-label="Close timer"
                 className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
               >

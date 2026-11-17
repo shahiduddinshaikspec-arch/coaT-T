@@ -1,38 +1,72 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { BookMarked, Eye, Moon, SlidersHorizontal, Sparkles, Sun, Type, X } from 'lucide-react';
+import {
+  BookMarked,
+  Eye,
+  Moon,
+  RotateCcw,
+  SlidersHorizontal,
+  Sparkles,
+  Sun,
+  Type,
+  X,
+} from 'lucide-react';
 import type { DisplayPreferences, FontScale } from '../types';
 
 interface Props {
   preferences: DisplayPreferences;
   onUpdatePreferences: (patch: Partial<DisplayPreferences>) => void;
   onOpenGlossaryBrowser: () => void;
+  onResetAllProgress: () => void;
 }
 
 export const DisplayControls: React.FC<Props> = ({
   preferences,
   onUpdatePreferences,
   onOpenGlossaryBrowser,
+  onResetAllProgress,
 }) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    closeBtnRef.current?.focus();
+
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
       }
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [open]);
+
+  const handleClose = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
 
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label="Reading comfort settings"
+        aria-expanded={open}
+        aria-label="View and reading comfort settings"
         title="Font size, dark theme, focus view & glossary"
         className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs sm:text-sm font-medium transition-colors cursor-pointer ${
           preferences.focusView
@@ -45,14 +79,19 @@ export const DisplayControls: React.FC<Props> = ({
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-4 shadow-lg z-50 space-y-4">
+        <div
+          role="dialog"
+          aria-label="Reading comfort settings"
+          className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-4 shadow-lg z-50 space-y-4"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
               Reading Comfort
             </span>
             <button
+              ref={closeBtnRef}
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={handleClose}
               aria-label="Close comfort settings"
               className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 cursor-pointer"
             >
@@ -128,7 +167,7 @@ export const DisplayControls: React.FC<Props> = ({
                 <Eye className="h-3.5 w-3.5 text-indigo-600" />
                 Low-Distraction View
               </div>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-600">
                 Hides sidebars & extra chrome while studying
               </p>
             </div>
@@ -136,6 +175,7 @@ export const DisplayControls: React.FC<Props> = ({
               type="button"
               role="switch"
               aria-checked={preferences.focusView}
+              aria-label="Enable low-distraction view"
               onClick={() => onUpdatePreferences({ focusView: !preferences.focusView })}
               className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors cursor-pointer ${
                 preferences.focusView ? 'bg-teal-600' : 'bg-slate-300'
@@ -156,7 +196,7 @@ export const DisplayControls: React.FC<Props> = ({
                 <Sparkles className="h-3.5 w-3.5 text-teal-600" />
                 Optional AI Tutor
               </div>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-600">
                 Uses server GEMINI_API_KEY when on
               </p>
             </div>
@@ -192,6 +232,21 @@ export const DisplayControls: React.FC<Props> = ({
             <BookMarked className="h-3.5 w-3.5 text-teal-600" />
             Open COA Quick Glossary
           </button>
+
+          {/* Accessible Reset Option for Mobile & Desktop */}
+          <div className="border-t border-slate-100 pt-2.5 text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onResetAllProgress();
+              }}
+              className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-rose-700 hover:underline cursor-pointer"
+            >
+              <RotateCcw className="h-3 w-3" />
+              Reset saved progress
+            </button>
+          </div>
         </div>
       )}
     </div>
