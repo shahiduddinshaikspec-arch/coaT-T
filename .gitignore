@@ -1,0 +1,15 @@
+# Dependencies & build output
+node_modules/
+dist/
+.vite/
+.vercel/
+
+# Local environment secrets (NEVER commit GEMINI_API_KEY)
+.env
+.env.local
+.env.*.local
+*.env
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
