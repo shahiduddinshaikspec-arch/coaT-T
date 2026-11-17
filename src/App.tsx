@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
   Calculator,
@@ -8,19 +8,13 @@ import {
   GraduationCap,
   Home,
   RotateCcw,
+  Search,
   Sparkles,
 } from 'lucide-react';
-import { AiTutorPanel } from './components/AiTutorPanel';
-import { ChecklistView } from './components/ChecklistView';
 import { DisplayControls } from './components/DisplayControls';
 import { FocusTimer } from './components/FocusTimer';
-import { ForgotView } from './components/ForgotView';
-import { GlossaryModal } from './components/GlossaryModal';
 import { HomeView } from './components/HomeView';
-import { LessonsView } from './components/LessonsView';
-import { NumericalsView } from './components/NumericalsView';
-import { PracticeView } from './components/PracticeView';
-import { SessionPlannerModal } from './components/SessionPlannerModal';
+import type { JumpTarget } from './components/QuickJumpModal';
 import { findGlossaryEntry } from './data/glossary';
 import { LESSONS } from './data/lessons';
 import { NUMERICALS } from './data/numericals';
@@ -33,6 +27,7 @@ import type {
   StudyProgress,
   StudySessionStep,
 } from './types';
+import type { SmartRecommendation } from './utils/smartEngine';
 import {
   addUnique,
   createDefaultProgress,
@@ -47,6 +42,35 @@ import {
   buildTutorContextForNumerical,
   buildTutorContextForQuestion,
 } from './utils/tutorContext';
+
+// Lazy-loaded views & modals for fast initial paint and small chunks
+const LessonsView = lazy(() =>
+  import('./components/LessonsView').then((m) => ({ default: m.LessonsView }))
+);
+const PracticeView = lazy(() =>
+  import('./components/PracticeView').then((m) => ({ default: m.PracticeView }))
+);
+const NumericalsView = lazy(() =>
+  import('./components/NumericalsView').then((m) => ({ default: m.NumericalsView }))
+);
+const ChecklistView = lazy(() =>
+  import('./components/ChecklistView').then((m) => ({ default: m.ChecklistView }))
+);
+const ForgotView = lazy(() =>
+  import('./components/ForgotView').then((m) => ({ default: m.ForgotView }))
+);
+const AiTutorPanel = lazy(() =>
+  import('./components/AiTutorPanel').then((m) => ({ default: m.AiTutorPanel }))
+);
+const GlossaryModal = lazy(() =>
+  import('./components/GlossaryModal').then((m) => ({ default: m.GlossaryModal }))
+);
+const SessionPlannerModal = lazy(() =>
+  import('./components/SessionPlannerModal').then((m) => ({ default: m.SessionPlannerModal }))
+);
+const QuickJumpModal = lazy(() =>
+  import('./components/QuickJumpModal').then((m) => ({ default: m.QuickJumpModal }))
+);
 
 const NAV_ITEMS: {
   id: AppView;
@@ -94,7 +118,37 @@ export function App() {
   const [sessionPlannerOpen, setSessionPlannerOpen] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [glossaryEntry, setGlossaryEntry] = useState<GlossaryEntry | null>(null);
+  const [quickJumpOpen, setQuickJumpOpen] = useState(false);
   const [tutorOpen, setTutorOpen] = useState(false);
+  const [pendingTutorPrompt, setPendingTutorPrompt] = useState<string | null>(null);
+
+  // Global Quick-Jump shortcut (Ctrl+K / Cmd+K or "/" outside text inputs)
+  useEffect(() => {
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setQuickJumpOpen((v) => !v);
+        return;
+      }
+      if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const target = e.target as HTMLElement | null;
+        if (
+          target &&
+          (target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.tagName === 'SELECT' ||
+            target.isContentEditable)
+        ) {
+          return;
+        }
+        if (document.querySelector('[role="dialog"]')) return;
+        e.preventDefault();
+        setQuickJumpOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, []);
 
   const activeTutorContext = useMemo(() => {
     if (view === 'numericals') {
@@ -238,7 +292,7 @@ export function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleLaunchSessionStep = (step: StudySessionStep) => {
+  const handleLaunchSessionStep = (step: StudySessionStep | SmartRecommendation) => {
     if (step.kind === 'lesson') {
       handleOpenLesson(step.targetId);
     } else if (step.kind === 'numerical') {
@@ -256,6 +310,27 @@ export function App() {
       });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+  };
+
+  const handleQuickJumpSelect = (target: JumpTarget) => {
+    if (target.kind === 'lesson') {
+      handleOpenLesson(target.id);
+    } else if (target.kind === 'numerical') {
+      handleOpenNumerical(target.id);
+    } else if (target.kind === 'question') {
+      handleJumpToQuestion(target.id);
+    } else if (target.kind === 'glossary') {
+      setGlossaryEntry(target.entry);
+      setGlossaryOpen(true);
+    }
+  };
+
+  const handleAskTutorAboutDraft = (draftText: string) => {
+    const clipped = draftText.slice(0, 420);
+    setPendingTutorPrompt(
+      `Here is my attempt in my own words: "${clipped}". Briefly tell me what I got right from the course answer key, then give me a small hint (not the full answer yet) for any missing point and ask me 1 quick follow-up question.`
+    );
+    setTutorOpen(true);
   };
 
   const handleContinueStudying = () => {
@@ -376,6 +451,68 @@ export function App() {
     }));
   };
 
+  const handleExportProgress = () => {
+    try {
+      const blob = new Blob([JSON.stringify(progress, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `coa-study-sprint-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Ignore blob failures
+    }
+  };
+
+  const handleImportProgress = (jsonText: string): boolean => {
+    try {
+      const parsed = JSON.parse(jsonText) as Partial<StudyProgress>;
+      if (!parsed || typeof parsed !== 'object') return false;
+      const base = createDefaultProgress();
+      const merged: StudyProgress = {
+        examDateTimeIST:
+          typeof parsed.examDateTimeIST === 'string' && parsed.examDateTimeIST.includes('T')
+            ? parsed.examDateTimeIST
+            : base.examDateTimeIST,
+        completedLessons: Array.isArray(parsed.completedLessons) ? parsed.completedLessons : [],
+        masteredQuestions: Array.isArray(parsed.masteredQuestions) ? parsed.masteredQuestions : [],
+        forgotQuestions: Array.isArray(parsed.forgotQuestions) ? parsed.forgotQuestions : [],
+        masteredNumericals: Array.isArray(parsed.masteredNumericals)
+          ? parsed.masteredNumericals
+          : [],
+        checkedHighYield: Array.isArray(parsed.checkedHighYield) ? parsed.checkedHighYield : [],
+        checkedQuestions: Array.isArray(parsed.checkedQuestions) ? parsed.checkedQuestions : [],
+        questionDrafts:
+          parsed.questionDrafts && typeof parsed.questionDrafts === 'object'
+            ? parsed.questionDrafts
+            : {},
+        questionSelfChecks:
+          parsed.questionSelfChecks && typeof parsed.questionSelfChecks === 'object'
+            ? parsed.questionSelfChecks
+            : {},
+        lastActivity: parsed.lastActivity ?? null,
+        preferences: {
+          theme: parsed.preferences?.theme === 'dark' ? 'dark' : 'light',
+          fontScale:
+            parsed.preferences?.fontScale === 'large' || parsed.preferences?.fontScale === 'xlarge'
+              ? parsed.preferences.fontScale
+              : 'normal',
+          focusView: Boolean(parsed.preferences?.focusView),
+          aiTutorEnabled: Boolean(parsed.preferences?.aiTutorEnabled),
+        },
+      };
+      setProgress(merged);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const handleResetAllProgress = () => {
     if (
       window.confirm(
@@ -411,7 +548,7 @@ export function App() {
               <div className="text-sm sm:text-base font-semibold tracking-tight text-slate-900 leading-none">
                 COA Study Sprint
               </div>
-              <div className="text-[11px] text-slate-500 hidden sm:block mt-0.5">
+              <div className="text-[11px] text-slate-600 hidden sm:block mt-0.5">
                 Zero-to-Ready · AS25-05PC02
               </div>
             </div>
@@ -458,8 +595,18 @@ export function App() {
             </button>
           )}
 
-          {/* Right Controls: Optional AI Tutor + Reading Comfort + Calm Focus Timer */}
+          {/* Right Controls: Quick Search + Optional AI Tutor + Reading Comfort + Calm Focus Timer */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setQuickJumpOpen(true)}
+              aria-label="Search lessons, questions, and terms (Ctrl+K)"
+              title="Quick Jump (Ctrl+K or /)"
+              className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+            >
+              <Search className="h-3.5 w-3.5 text-slate-500" />
+              <span className="hidden xl:inline font-mono text-[11px] text-slate-600">Ctrl+K</span>
+            </button>
             <button
               type="button"
               onClick={() => setTutorOpen(true)}
@@ -477,13 +624,15 @@ export function App() {
               preferences={progress.preferences}
               onUpdatePreferences={handleUpdatePreferences}
               onOpenGlossaryBrowser={handleOpenGlossaryBrowser}
+              onExportProgress={handleExportProgress}
+              onImportProgress={handleImportProgress}
               onResetAllProgress={handleResetAllProgress}
             />
             <FocusTimer />
           </div>
         </div>
 
-        {/* Dedicated mobile exit bar when Low-Distraction Focus View is active (zero header crowding at 390px) */}
+        {/* Dedicated mobile exit bar when Low-Distraction Focus View is active */}
         {isFocusActive && (
           <div className="sm:hidden border-t border-indigo-200 bg-indigo-50 px-4 py-2 flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-indigo-900">Low-Distraction Focus View</span>
@@ -508,6 +657,7 @@ export function App() {
             onDismissResumeBanner={() => setShowResumeBanner(false)}
             onUpdateExamDateTime={handleUpdateExamDateTime}
             onContinueStudying={handleContinueStudying}
+            onLaunchRecommendation={handleLaunchSessionStep}
             onOpenSessionPlanner={() => setSessionPlannerOpen(true)}
             onOpenGlossary={handleOpenGlossaryBrowser}
             onOpenUnitLessons={handleOpenUnitLessons}
@@ -516,95 +666,104 @@ export function App() {
           />
         )}
 
-        {view === 'lessons' && (
-          <LessonsView
-            selectedUnit={selectedLessonUnit}
-            selectedLessonId={selectedLessonId}
-            progress={progress}
-            focusView={isFocusActive}
-            onSelectUnit={setSelectedLessonUnit}
-            onSelectLesson={handleOpenLesson}
-            onToggleLessonComplete={handleToggleLessonComplete}
-            onJumpToQuestion={handleJumpToQuestion}
-            onJumpToNumerical={handleOpenNumerical}
-            onOpenTerm={handleOpenTerm}
-          />
-        )}
+        <Suspense
+          fallback={
+            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600">
+              Loading study section...
+            </div>
+          }
+        >
+          {view === 'lessons' && (
+            <LessonsView
+              selectedUnit={selectedLessonUnit}
+              selectedLessonId={selectedLessonId}
+              progress={progress}
+              focusView={isFocusActive}
+              onSelectUnit={setSelectedLessonUnit}
+              onSelectLesson={handleOpenLesson}
+              onToggleLessonComplete={handleToggleLessonComplete}
+              onJumpToQuestion={handleJumpToQuestion}
+              onJumpToNumerical={handleOpenNumerical}
+              onOpenTerm={handleOpenTerm}
+            />
+          )}
 
-        {view === 'practice' && (
-          <PracticeView
-            marksMode={practiceMarks}
-            unitFilter={practiceUnit}
-            focusedQuestionId={focusedQuestionId}
-            progress={progress}
-            focusView={isFocusActive}
-            onChangeMarksMode={(m) => {
-              setPracticeMarks(m);
-              setFocusedQuestionId(null);
-            }}
-            onChangeUnitFilter={(u) => {
-              setPracticeUnit(u);
-              setFocusedQuestionId(null);
-            }}
-            onSelectQuestionId={(qid) => {
-              setFocusedQuestionId(qid);
-              const q = QUESTIONS.find((item) => item.id === qid);
-              if (q) {
-                recordActivity({
-                  view: 'practice',
-                  label: `Practice Unit ${q.unit} ${q.qNum} (${q.marks}M)`,
-                  unit: q.unit,
-                  practiceMarks: q.marks,
-                  questionId: q.id,
-                });
-              }
-            }}
-            onSaveDraft={handleSaveDraft}
-            onToggleSelfCheck={handleToggleSelfCheck}
-            onMarkGotIt={handleMarkQuestionGotIt}
-            onMarkForgot={handleMarkQuestionForgot}
-            onOpenLesson={handleOpenLesson}
-            onOpenNumerical={handleOpenNumerical}
-            onOpenTerm={handleOpenTerm}
-          />
-        )}
+          {view === 'practice' && (
+            <PracticeView
+              marksMode={practiceMarks}
+              unitFilter={practiceUnit}
+              focusedQuestionId={focusedQuestionId}
+              progress={progress}
+              focusView={isFocusActive}
+              onChangeMarksMode={(m) => {
+                setPracticeMarks(m);
+                setFocusedQuestionId(null);
+              }}
+              onChangeUnitFilter={(u) => {
+                setPracticeUnit(u);
+                setFocusedQuestionId(null);
+              }}
+              onSelectQuestionId={(qid) => {
+                setFocusedQuestionId(qid);
+                const q = QUESTIONS.find((item) => item.id === qid);
+                if (q) {
+                  recordActivity({
+                    view: 'practice',
+                    label: `Practice Unit ${q.unit} ${q.qNum} (${q.marks}M)`,
+                    unit: q.unit,
+                    practiceMarks: q.marks,
+                    questionId: q.id,
+                  });
+                }
+              }}
+              onSaveDraft={handleSaveDraft}
+              onToggleSelfCheck={handleToggleSelfCheck}
+              onMarkGotIt={handleMarkQuestionGotIt}
+              onMarkForgot={handleMarkQuestionForgot}
+              onOpenLesson={handleOpenLesson}
+              onOpenNumerical={handleOpenNumerical}
+              onOpenTerm={handleOpenTerm}
+              onAskTutorAboutDraft={handleAskTutorAboutDraft}
+            />
+          )}
 
-        {view === 'numericals' && (
-          <NumericalsView
-            selectedNumericalId={selectedNumericalId}
-            progress={progress}
-            focusView={isFocusActive}
-            onSelectNumerical={handleOpenNumerical}
-            onToggleMasteredNumerical={handleToggleMasteredNumerical}
-            onMarkQuestionForgot={handleMarkQuestionForgot}
-          />
-        )}
+          {view === 'numericals' && (
+            <NumericalsView
+              selectedNumericalId={selectedNumericalId}
+              progress={progress}
+              focusView={isFocusActive}
+              onSelectNumerical={handleOpenNumerical}
+              onToggleMasteredNumerical={handleToggleMasteredNumerical}
+              onMarkQuestionForgot={handleMarkQuestionForgot}
+            />
+          )}
 
-        {view === 'checklist' && (
-          <ChecklistView
-            progress={progress}
-            onToggleHighYield={handleToggleHighYield}
-            onToggleQuestionChecked={handleToggleQuestionChecked}
-            onOpenLesson={handleOpenLesson}
-            onOpenQuestionPractice={handleJumpToQuestion}
-            onOpenNumerical={handleOpenNumerical}
-          />
-        )}
+          {view === 'checklist' && (
+            <ChecklistView
+              progress={progress}
+              onToggleHighYield={handleToggleHighYield}
+              onToggleQuestionChecked={handleToggleQuestionChecked}
+              onOpenLesson={handleOpenLesson}
+              onOpenQuestionPractice={handleJumpToQuestion}
+              onOpenNumerical={handleOpenNumerical}
+            />
+          )}
 
-        {view === 'forgot' && (
-          <ForgotView
-            progress={progress}
-            focusedForgotId={focusedForgotId}
-            focusView={isFocusActive}
-            onSaveDraft={handleSaveDraft}
-            onToggleSelfCheck={handleToggleSelfCheck}
-            onMarkRecovered={handleMarkQuestionGotIt}
-            onRemoveFromForgot={handleRemoveFromForgot}
-            onOpenLesson={handleOpenLesson}
-            onOpenNumerical={handleOpenNumerical}
-            onGoToPractice={() => handleNavigate('practice')}
-          />
-        )}
+          {view === 'forgot' && (
+            <ForgotView
+              progress={progress}
+              focusedForgotId={focusedForgotId}
+              focusView={isFocusActive}
+              onSaveDraft={handleSaveDraft}
+              onToggleSelfCheck={handleToggleSelfCheck}
+              onMarkRecovered={handleMarkQuestionGotIt}
+              onRemoveFromForgot={handleRemoveFromForgot}
+              onOpenLesson={handleOpenLesson}
+              onOpenNumerical={handleOpenNumerical}
+              onGoToPractice={() => handleNavigate('practice')}
+            />
+          )}
+        </Suspense>
       </main>
 
       {/* Subtle Offline Footer (hidden below lg and in focus view) */}
@@ -612,7 +771,8 @@ export function App() {
         <footer className="hidden lg:block border-t border-slate-200/80 bg-white/70 py-4 text-xs text-slate-600">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-6">
             <span>
-              COA Study Sprint · 100% local & offline · Lessons, drafts, checklists, and missed items save automatically.
+              COA Study Sprint · 100% local &amp; offline · Press{' '}
+              <kbd className="font-mono font-semibold">Ctrl+K</kbd> anytime to jump to any topic.
             </span>
             <button
               type="button"
@@ -662,31 +822,47 @@ export function App() {
         </nav>
       )}
 
-      {/* Mini Study Session Planner ("How much time do you have?") */}
-      <SessionPlannerModal
-        open={sessionPlannerOpen}
-        progress={progress}
-        onClose={() => setSessionPlannerOpen(false)}
-        onLaunchStep={handleLaunchSessionStep}
-      />
+      {/* Lazy-mounted Overlays */}
+      <Suspense fallback={null}>
+        {sessionPlannerOpen && (
+          <SessionPlannerModal
+            open={sessionPlannerOpen}
+            progress={progress}
+            onClose={() => setSessionPlannerOpen(false)}
+            onLaunchStep={handleLaunchSessionStep}
+          />
+        )}
 
-      {/* Quick COA Glossary Modal */}
-      <GlossaryModal
-        open={glossaryOpen}
-        selectedEntry={glossaryEntry}
-        onSelectEntry={setGlossaryEntry}
-        onClose={() => setGlossaryOpen(false)}
-      />
+        {glossaryOpen && (
+          <GlossaryModal
+            open={glossaryOpen}
+            selectedEntry={glossaryEntry}
+            onSelectEntry={setGlossaryEntry}
+            onClose={() => setGlossaryOpen(false)}
+          />
+        )}
 
-      {/* Optional Server-Side Gemini Flash AI Tutor */}
-      <AiTutorPanel
-        open={tutorOpen}
-        aiEnabled={progress.preferences.aiTutorEnabled}
-        context={activeTutorContext}
-        onToggleAiEnabled={(enabled) => handleUpdatePreferences({ aiTutorEnabled: enabled })}
-        onUseBuiltInLesson={handleOpenLesson}
-        onClose={() => setTutorOpen(false)}
-      />
+        {quickJumpOpen && (
+          <QuickJumpModal
+            open={quickJumpOpen}
+            onClose={() => setQuickJumpOpen(false)}
+            onSelect={handleQuickJumpSelect}
+          />
+        )}
+
+        {tutorOpen && (
+          <AiTutorPanel
+            open={tutorOpen}
+            aiEnabled={progress.preferences.aiTutorEnabled}
+            context={activeTutorContext}
+            pendingPrompt={pendingTutorPrompt}
+            onConsumePendingPrompt={() => setPendingTutorPrompt(null)}
+            onToggleAiEnabled={(enabled) => handleUpdatePreferences({ aiTutorEnabled: enabled })}
+            onUseBuiltInLesson={handleOpenLesson}
+            onClose={() => setTutorOpen(false)}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

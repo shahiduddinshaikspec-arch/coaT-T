@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   BookMarked,
@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Clock,
+  Compass,
   Edit3,
   Flame,
   RotateCcw,
@@ -18,6 +19,12 @@ import { LESSONS } from '../data/lessons';
 import { NUMERICALS } from '../data/numericals';
 import { QUESTIONS, UNITS } from '../data/questions';
 import type { AppView, StudyProgress } from '../types';
+import {
+  computeUnitReadiness,
+  getCalmPaceNote,
+  getSmartRecommendation,
+  type SmartRecommendation,
+} from '../utils/smartEngine';
 import {
   formatExamDisplayIST,
   getCountdownParts,
@@ -30,6 +37,7 @@ interface Props {
   onDismissResumeBanner: () => void;
   onUpdateExamDateTime: (istValue: string) => void;
   onContinueStudying: () => void;
+  onLaunchRecommendation: (rec: SmartRecommendation) => void;
   onOpenSessionPlanner: () => void;
   onOpenGlossary: () => void;
   onOpenUnitLessons: (unit: number) => void;
@@ -51,6 +59,7 @@ export const HomeView: React.FC<Props> = ({
   onDismissResumeBanner,
   onUpdateExamDateTime,
   onContinueStudying,
+  onLaunchRecommendation,
   onOpenSessionPlanner,
   onOpenGlossary,
   onOpenUnitLessons,
@@ -74,6 +83,9 @@ export const HomeView: React.FC<Props> = ({
 
   const countdown = getCountdownParts(progress.examDateTimeIST, nowMs);
   const examDisplay = formatExamDisplayIST(progress.examDateTimeIST);
+  const smartRec = useMemo(() => getSmartRecommendation(progress), [progress]);
+  const unitReadinessList = useMemo(() => computeUnitReadiness(progress), [progress]);
+  const paceNote = getCalmPaceNote(progress, nowMs);
 
   const handleSaveExam = (e: React.FormEvent) => {
     e.preventDefault();
@@ -233,18 +245,21 @@ export const HomeView: React.FC<Props> = ({
             )}
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100">
-            <p className="text-xs text-slate-500">
-              Source: <span className="font-medium text-slate-700">COA Answer Key SR25</span> · 5 Units · 90 Qs
-            </p>
-            <button
-              type="button"
-              onClick={onOpenGlossary}
-              className="inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:underline cursor-pointer"
-            >
-              <BookMarked className="h-3.5 w-3.5" />
-              Quick Glossary
-            </button>
+          <div className="mt-4 space-y-2 pt-3 border-t border-slate-100">
+            <p className="text-xs text-slate-600 leading-relaxed">{paceNote}</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-slate-600">
+                Source: <span className="font-medium text-slate-700">COA Answer Key SR25</span> · 5 Units · 90 Qs
+              </p>
+              <button
+                type="button"
+                onClick={onOpenGlossary}
+                className="inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:underline cursor-pointer"
+              >
+                <BookMarked className="h-3.5 w-3.5" />
+                Quick Glossary
+              </button>
+            </div>
           </div>
         </section>
 
@@ -324,6 +339,36 @@ export const HomeView: React.FC<Props> = ({
           </div>
         </section>
       </div>
+
+      {/* Intelligent Recommended Next Action */}
+      <section className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-indigo-800">
+              <Compass className="h-3.5 w-3.5" />
+              Smart Next Pick
+            </span>
+            <span className="rounded-full bg-white border border-indigo-200 px-2 py-0.5 text-[11px] font-semibold text-indigo-800">
+              {smartRec.badge}
+            </span>
+            <span className="font-mono text-[11px] text-slate-600">
+              ~{smartRec.estimatedMinutes} min
+            </span>
+          </div>
+          <p className="mt-1 text-sm sm:text-[15px] font-semibold text-slate-900 leading-snug">
+            {smartRec.title}
+          </p>
+          <p className="mt-0.5 text-xs text-slate-700 leading-relaxed">{smartRec.reason}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onLaunchRecommendation(smartRec)}
+          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-xs sm:text-sm font-semibold text-white hover:bg-slate-800 cursor-pointer"
+        >
+          Start this (~{smartRec.estimatedMinutes}m)
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      </section>
 
       {/* Progress Strip */}
       <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -418,11 +463,7 @@ export const HomeView: React.FC<Props> = ({
               progress.masteredQuestions.includes(q.id)
             ).length;
             const unitHighYield = HIGH_YIELD_TOPICS.filter((h) => h.unit === u.unit).length;
-            const unitPct = Math.round(
-              ((doneLessons / unitLessons.length) * 0.5 +
-                (doneQuestions / unitQuestions.length) * 0.5) *
-                100
-            );
+            const unitPct = unitReadinessList.find((r) => r.unit === u.unit)?.score ?? 0;
             const accent = UNIT_ACCENTS[u.unit];
 
             return (

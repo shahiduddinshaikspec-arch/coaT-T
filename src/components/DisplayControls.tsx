@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   BookMarked,
+  Download,
   Eye,
   Moon,
   RotateCcw,
@@ -8,6 +9,7 @@ import {
   Sparkles,
   Sun,
   Type,
+  Upload,
   X,
 } from 'lucide-react';
 import type { DisplayPreferences, FontScale } from '../types';
@@ -16,6 +18,8 @@ interface Props {
   preferences: DisplayPreferences;
   onUpdatePreferences: (patch: Partial<DisplayPreferences>) => void;
   onOpenGlossaryBrowser: () => void;
+  onExportProgress: () => void;
+  onImportProgress: (jsonText: string) => boolean;
   onResetAllProgress: () => void;
 }
 
@@ -23,12 +27,16 @@ export const DisplayControls: React.FC<Props> = ({
   preferences,
   onUpdatePreferences,
   onOpenGlossaryBrowser,
+  onExportProgress,
+  onImportProgress,
   onResetAllProgress,
 }) => {
   const [open, setOpen] = useState(false);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -233,19 +241,62 @@ export const DisplayControls: React.FC<Props> = ({
             Open COA Quick Glossary
           </button>
 
-          {/* Accessible Reset Option for Mobile & Desktop */}
-          <div className="border-t border-slate-100 pt-2.5 text-center">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onResetAllProgress();
-              }}
-              className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-rose-700 hover:underline cursor-pointer"
-            >
-              <RotateCcw className="h-3 w-3" />
-              Reset saved progress
-            </button>
+          {/* Local Progress Backup (Phone <-> Laptop offline sync) */}
+          <div className="border-t border-slate-100 pt-2.5 space-y-2">
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={onExportProgress}
+                className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <Download className="h-3 w-3" />
+                Backup JSON
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <Upload className="h-3 w-3" />
+                Restore JSON
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/json,.json"
+                aria-label="Restore saved progress JSON file"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const ok = onImportProgress(String(reader.result || ''));
+                    setImportStatus(
+                      ok ? 'Progress restored!' : 'Could not read that backup file.'
+                    );
+                  };
+                  reader.readAsText(file);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+            {importStatus && (
+              <p className="text-center text-[11px] font-medium text-teal-800">{importStatus}</p>
+            )}
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onResetAllProgress();
+                }}
+                className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-rose-700 hover:underline cursor-pointer"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Reset saved progress
+              </button>
+            </div>
           </div>
         </div>
       )}

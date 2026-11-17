@@ -17,6 +17,7 @@ import { NUMERICALS } from '../data/numericals';
 import { QUESTIONS, UNITS } from '../data/questions';
 import { SIMPLE_LESSONS } from '../data/simpleLessons';
 import type { StudyProgress } from '../types';
+import { InteractiveLab } from './InteractiveLab';
 import { ReadAloudButton } from './ReadAloudButton';
 
 interface Props {
@@ -461,6 +462,9 @@ export const LessonsView: React.FC<Props> = ({
               Exam Takeaway: {currentLesson.workedExample.takeaway}
             </div>
           </section>
+
+          {/* Hands-On Interactive Lab (when available for this topic) */}
+          <InteractiveLab lessonId={currentLesson.id} />
 
           {/* Visual Diagram or Table */}
           {currentLesson.diagram && (

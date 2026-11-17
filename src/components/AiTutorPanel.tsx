@@ -33,6 +33,8 @@ interface Props {
   open: boolean;
   aiEnabled: boolean;
   context: TutorTopicContext;
+  pendingPrompt?: string | null;
+  onConsumePendingPrompt?: () => void;
   onToggleAiEnabled: (enabled: boolean) => void;
   onUseBuiltInLesson: (lessonId: string) => void;
   onClose: () => void;
@@ -42,6 +44,8 @@ export const AiTutorPanel: React.FC<Props> = ({
   open,
   aiEnabled,
   context,
+  pendingPrompt,
+  onConsumePendingPrompt,
   onToggleAiEnabled,
   onUseBuiltInLesson,
   onClose,
@@ -98,8 +102,6 @@ export const AiTutorPanel: React.FC<Props> = ({
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  if (!open) return null;
-
   const sendPrompt = async (promptText: string) => {
     const trimmed = promptText.trim();
     if (!trimmed || loading || !aiEnabled) return;
@@ -140,7 +142,6 @@ export const AiTutorPanel: React.FC<Props> = ({
           data.error ||
             'Could not get a tutor reply right now. You can keep using the built-in lessons offline.'
         );
-        // Roll back the user's unsent bubble if server rejected before answering
         setMessages(nextHistory);
         return;
       }
@@ -155,6 +156,17 @@ export const AiTutorPanel: React.FC<Props> = ({
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (open && aiEnabled && status?.configured && pendingPrompt && !loading) {
+      const toSend = pendingPrompt;
+      onConsumePendingPrompt?.();
+      void sendPrompt(toSend);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, aiEnabled, status?.configured, pendingPrompt]);
+
+  if (!open) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

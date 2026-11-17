@@ -31,4 +31,27 @@ function tutorApiPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), tutorApiPlugin()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+            return 'vendor-react';
+          }
+          if (id.includes('node_modules/lucide-react')) {
+            return 'vendor-icons';
+          }
+          if (id.includes('/src/data/questions')) {
+            return 'data-questions';
+          }
+          if (id.includes('/src/data/lessons') || id.includes('/src/data/simpleLessons')) {
+            return 'data-lessons';
+          }
+          if (id.includes('/src/data/numericals') || id.includes('/src/data/glossary')) {
+            return 'data-reference';
+          }
+        },
+      },
+    },
+  },
 });

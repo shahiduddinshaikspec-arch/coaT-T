@@ -14,6 +14,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  Sparkles,
 } from 'lucide-react';
 import { QUESTIONS, UNITS } from '../data/questions';
 import type { StudyProgress, StudyQuestion } from '../types';
@@ -37,6 +38,7 @@ interface Props {
   onOpenLesson: (lessonId: string) => void;
   onOpenNumerical: (numericalId: string) => void;
   onOpenTerm: (term: string) => void;
+  onAskTutorAboutDraft: (draftText: string) => void;
 }
 
 const TEN_MARK_DEFAULT_SECONDS = 12 * 60;
@@ -57,6 +59,7 @@ export const PracticeView: React.FC<Props> = ({
   onOpenLesson,
   onOpenNumerical,
   onOpenTerm,
+  onAskTutorAboutDraft,
 }) => {
   const filteredQuestions = useMemo(() => {
     return QUESTIONS.filter(
@@ -102,6 +105,74 @@ export const PracticeView: React.FC<Props> = ({
     }, 1000);
     return () => window.clearInterval(id);
   }, [examTimerRunning, marksMode]);
+
+  // Fast keyboard shortcuts when not typing in an input/textarea or modal
+  useEffect(() => {
+    if (!currentQuestion) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"]')) return;
+
+      const k = e.key.toLowerCase();
+      if (k === 'h') {
+        e.preventDefault();
+        setHintShown((v) => !v);
+      } else if (k === 'r' && !answerRevealed) {
+        e.preventDefault();
+        const draft = (progress.questionDrafts[currentQuestion.id] || '').trim();
+        const checks = progress.questionSelfChecks[currentQuestion.id] || [];
+        if (!draft && checks.length === 0 && !hintShown && !tryPromptNeeded) {
+          setHintShown(true);
+          setTryPromptNeeded(true);
+        } else {
+          setAnswerRevealed(true);
+          setExamTimerRunning(false);
+        }
+      } else if (e.key === 'ArrowLeft' && activeIndex > 0) {
+        e.preventDefault();
+        onSelectQuestionId(filteredQuestions[activeIndex - 1].id);
+      } else if (e.key === 'ArrowRight' && activeIndex < filteredQuestions.length - 1) {
+        e.preventDefault();
+        onSelectQuestionId(filteredQuestions[activeIndex + 1].id);
+      } else if (k === 'g' && answerRevealed) {
+        e.preventDefault();
+        onMarkGotIt(currentQuestion.id);
+        if (activeIndex < filteredQuestions.length - 1) {
+          onSelectQuestionId(filteredQuestions[activeIndex + 1].id);
+        }
+      } else if (k === 'f' && answerRevealed) {
+        e.preventDefault();
+        onMarkForgot(currentQuestion.id);
+        if (activeIndex < filteredQuestions.length - 1) {
+          onSelectQuestionId(filteredQuestions[activeIndex + 1].id);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [
+    currentQuestion,
+    answerRevealed,
+    hintShown,
+    tryPromptNeeded,
+    activeIndex,
+    filteredQuestions,
+    progress.questionDrafts,
+    progress.questionSelfChecks,
+    onSelectQuestionId,
+    onMarkGotIt,
+    onMarkForgot,
+  ]);
 
   if (!currentQuestion) {
     return (
@@ -402,7 +473,26 @@ export const PracticeView: React.FC<Props> = ({
                 Reveal Answer Key
               </button>
             )}
+
+            {progress.preferences.aiTutorEnabled && userDraft.trim().length > 0 && (
+              <button
+                type="button"
+                onClick={() => onAskTutorAboutDraft(userDraft.trim())}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-teal-300 bg-teal-50 px-3.5 py-2 text-xs sm:text-sm font-medium text-teal-800 hover:bg-teal-100/70 cursor-pointer"
+              >
+                <Sparkles className="h-4 w-4 text-teal-600" />
+                Check my draft with AI Tutor
+              </button>
+            )}
           </div>
+
+          <p className="hidden lg:block text-[11px] text-slate-600">
+            Shortcuts: <kbd className="font-mono font-semibold">H</kbd> hint ·{' '}
+            <kbd className="font-mono font-semibold">R</kbd> reveal ·{' '}
+            <kbd className="font-mono font-semibold">←/→</kbd> prev/next ·{' '}
+            <kbd className="font-mono font-semibold">G</kbd> got it ·{' '}
+            <kbd className="font-mono font-semibold">F</kbd> forgot
+          </p>
 
           {tryPromptNeeded && !answerRevealed && (
             <p className="text-xs font-medium text-amber-800">
