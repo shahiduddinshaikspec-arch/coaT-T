@@ -22,11 +22,6 @@ interface ChatMessage {
 interface TutorStatus {
   configured: boolean;
   model: string;
-  limit: {
-    maxRequests: number;
-    windowMinutes: number;
-    remaining: number;
-  };
 }
 
 interface Props {
@@ -119,20 +114,19 @@ export const AiTutorPanel: React.FC<Props> = ({
         body: JSON.stringify({
           topicTitle: context.topicTitle,
           excerpt: context.excerpt,
-          history: nextHistory.slice(-8),
+          history: nextHistory.slice(-20),
           userMessage: trimmed,
         }),
       });
 
       const data = await res.json().catch(() => ({}));
-      if (data.limit) {
+      if (typeof data.configured === 'boolean') {
         setStatus((prev) =>
           prev
-            ? { ...prev, configured: data.configured ?? prev.configured, limit: data.limit }
+            ? { ...prev, configured: data.configured, model: data.model || prev.model }
             : {
-                configured: Boolean(data.configured),
+                configured: data.configured,
                 model: data.model || 'gemini-2.5-flash',
-                limit: data.limit,
               }
         );
       }
@@ -172,9 +166,6 @@ export const AiTutorPanel: React.FC<Props> = ({
     e.preventDefault();
     void sendPrompt(input);
   };
-
-  const remaining = status?.limit?.remaining ?? 20;
-  const maxReqs = status?.limit?.maxRequests ?? 20;
 
   return (
     <div
@@ -239,7 +230,7 @@ export const AiTutorPanel: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Grounded Topic & Limit Pill */}
+          {/* Grounded Topic Pill */}
           <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs">
             <div className="font-medium text-slate-800 line-clamp-1">{context.topicTitle}</div>
             <div className="mt-1 flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-500">
@@ -247,11 +238,6 @@ export const AiTutorPanel: React.FC<Props> = ({
                 <ShieldCheck className="h-3 w-3 text-teal-600" />
                 Only sends: {context.sourceLabels.join(', ')}
               </span>
-              {aiEnabled && status?.configured && (
-                <span className="font-mono">
-                  {remaining}/{maxReqs} left
-                </span>
-              )}
             </div>
           </div>
         </div>
@@ -437,18 +423,14 @@ npm run dev`}
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  disabled={loading || remaining === 0}
-                  maxLength={600}
-                  placeholder={
-                    remaining === 0
-                      ? 'Request limit reached — use built-in lessons'
-                      : 'Answer the question, or ask for a hint...'
-                  }
+                  disabled={loading}
+                  maxLength={2000}
+                  placeholder="Answer the question, or ask for a hint..."
                   className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-teal-600 focus:outline-none disabled:opacity-60"
                 />
                 <button
                   type="submit"
-                  disabled={loading || !input.trim() || remaining === 0}
+                  disabled={loading || !input.trim()}
                   aria-label="Send message"
                   className="rounded-xl bg-teal-700 p-2.5 text-white hover:bg-teal-800 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                 >
@@ -460,7 +442,7 @@ npm run dev`}
                   <button
                     type="button"
                     onClick={() => sendPrompt('Give me a small hint first, not the full answer.')}
-                    disabled={loading || remaining === 0}
+                    disabled={loading}
                     className="text-amber-800 hover:underline cursor-pointer disabled:opacity-40"
                   >
                     Ask for a hint

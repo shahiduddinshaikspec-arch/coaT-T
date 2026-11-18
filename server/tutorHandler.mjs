@@ -50,34 +50,11 @@ function getApiKey() {
 }
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
-const MAX_REQUESTS_PER_WINDOW = 20;
-const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const MAX_BODY_BYTES = 16 * 1024; // 16 KB max payload
-const MAX_EXCERPT_CHARS = 4500;
-const MAX_TOPIC_CHARS = 180;
-const MAX_MESSAGE_CHARS = 600;
-const MAX_HISTORY_TURNS = 8;
-
-const rateBuckets = new Map();
-
-function getClientId(req) {
-  const fwd = req.headers?.['x-forwarded-for'];
-  if (typeof fwd === 'string' && fwd.trim()) {
-    return fwd.split(',')[0].trim();
-  }
-  return req.socket?.remoteAddress || 'local';
-}
-
-function getBucket(clientId) {
-  const now = Date.now();
-  const existing = rateBuckets.get(clientId);
-  if (!existing || now > existing.resetAt) {
-    const fresh = { count: 0, resetAt: now + WINDOW_MS };
-    rateBuckets.set(clientId, fresh);
-    return fresh;
-  }
-  return existing;
-}
+const MAX_BODY_BYTES = 64 * 1024; // 64 KB max payload
+const MAX_EXCERPT_CHARS = 8000;
+const MAX_TOPIC_CHARS = 240;
+const MAX_MESSAGE_CHARS = 2000;
+const MAX_HISTORY_TURNS = 20;
 
 function getModelName() {
   const envModel = (process.env.GEMINI_MODEL || '').trim();
@@ -161,17 +138,9 @@ export async function handleTutorRequest(req, res) {
   // GET /api/tutor/status
   if (urlPath === '/api/tutor/status' && req.method === 'GET') {
     const configured = Boolean(getApiKey());
-    const clientId = getClientId(req);
-    const bucket = getBucket(clientId);
-    const remaining = Math.max(0, MAX_REQUESTS_PER_WINDOW - bucket.count);
     sendJson(res, 200, {
       configured,
       model: getModelName(),
-      limit: {
-        maxRequests: MAX_REQUESTS_PER_WINDOW,
-        windowMinutes: Math.round(WINDOW_MS / 60000),
-        remaining,
-      },
     });
     return true;
   }
@@ -180,35 +149,12 @@ export async function handleTutorRequest(req, res) {
   if (urlPath === '/api/tutor' && req.method === 'POST') {
     const apiKey = getApiKey();
     const model = getModelName();
-    const clientId = getClientId(req);
-    const bucket = getBucket(clientId);
 
     if (!apiKey) {
       sendJson(res, 503, {
         configured: false,
         error:
           'No GEMINI_API_KEY is configured on the server. The built-in beginner lessons, hints, and step-by-step numericals work completely offline without AI.',
-        limit: {
-          maxRequests: MAX_REQUESTS_PER_WINDOW,
-          windowMinutes: Math.round(WINDOW_MS / 60000),
-          remaining: Math.max(0, MAX_REQUESTS_PER_WINDOW - bucket.count),
-        },
-      });
-      return true;
-    }
-
-    if (bucket.count >= MAX_REQUESTS_PER_WINDOW) {
-      const retryMinutes = Math.max(1, Math.ceil((bucket.resetAt - Date.now()) / 60000));
-      sendJson(res, 429, {
-        configured: true,
-        error: `You reached the gentle study limit of ${MAX_REQUESTS_PER_WINDOW} AI replies per ${Math.round(
-          WINDOW_MS / 60000
-        )} minutes. You can keep using the built-in lessons now, or try again in ~${retryMinutes} min.`,
-        limit: {
-          maxRequests: MAX_REQUESTS_PER_WINDOW,
-          windowMinutes: Math.round(WINDOW_MS / 60000),
-          remaining: 0,
-        },
       });
       return true;
     }
@@ -242,15 +188,12 @@ export async function handleTutorRequest(req, res) {
     const contents = [];
     for (const turn of rawHistory) {
       if (!turn || (turn.role !== 'user' && turn.role !== 'model')) continue;
-      const text = String(turn.text || '').trim().slice(0, 900);
+      const text = String(turn.text || '').trim().slice(0, 2000);
       if (text) {
         contents.push({ role: turn.role, parts: [{ text }] });
       }
     }
     contents.push({ role: 'user', parts: [{ text: userMessage }] });
-
-    bucket.count += 1;
-    const remaining = Math.max(0, MAX_REQUESTS_PER_WINDOW - bucket.count);
 
     try {
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
@@ -270,7 +213,7 @@ export async function handleTutorRequest(req, res) {
           contents,
           generationConfig: {
             temperature: 0.3,
-            maxOutputTokens: 700,
+            maxOutputTokens: 1500,
           },
         }),
       });
@@ -279,18 +222,13 @@ export async function handleTutorRequest(req, res) {
         // Do NOT log or expose raw upstream headers or keys
         const statusMsg =
           upstream.status === 429
-            ? 'Gemini API rate limit reached right now. Please try again in a minute or use the built-in lesson.'
+            ? 'Google Gemini API quota/rate limit reached right now. Please try again in a minute or use the built-in lesson.'
             : upstream.status === 401 || upstream.status === 403
               ? 'Server GEMINI_API_KEY was rejected by Gemini API. Check the server environment variable, or continue with the built-in offline lessons.'
               : `Gemini API returned status ${upstream.status}. You can continue studying offline with the built-in lessons.`;
         sendJson(res, 502, {
           configured: true,
           error: statusMsg,
-          limit: {
-            maxRequests: MAX_REQUESTS_PER_WINDOW,
-            windowMinutes: Math.round(WINDOW_MS / 60000),
-            remaining,
-          },
         });
         return true;
       }
@@ -306,11 +244,6 @@ export async function handleTutorRequest(req, res) {
         sendJson(res, 502, {
           configured: true,
           error: 'The tutor returned an empty response. Try asking again or use the built-in lesson.',
-          limit: {
-            maxRequests: MAX_REQUESTS_PER_WINDOW,
-            windowMinutes: Math.round(WINDOW_MS / 60000),
-            remaining,
-          },
         });
         return true;
       }
@@ -319,11 +252,6 @@ export async function handleTutorRequest(req, res) {
         configured: true,
         model,
         reply,
-        limit: {
-          maxRequests: MAX_REQUESTS_PER_WINDOW,
-          windowMinutes: Math.round(WINDOW_MS / 60000),
-          remaining,
-        },
       });
       return true;
     } catch {
@@ -331,11 +259,6 @@ export async function handleTutorRequest(req, res) {
         configured: true,
         error:
           'Could not reach the Gemini API from the server (network offline or unreachable). Your built-in lessons and practice modes remain fully usable offline.',
-        limit: {
-          maxRequests: MAX_REQUESTS_PER_WINDOW,
-          windowMinutes: Math.round(WINDOW_MS / 60000),
-          remaining,
-        },
       });
       return true;
     }

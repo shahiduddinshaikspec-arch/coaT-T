@@ -53,5 +53,5 @@ The app works **100% offline without any API key**. If you want to enable the op
      npm run dev
      ```
 2. Open the app, click **AI Tutor** in the top bar (or open **View**), and switch **AI Tutor** to **On**.
-3. The server-side endpoint (`/api/tutor`) reads `GEMINI_API_KEY` exclusively on the server, sends only the active topic and relevant excerpt from `COA_Answer_Key_SR25.docx`, enforces a gentle limit of **20 requests per 15 minutes**, and falls back cleanly to built-in lessons if no key is set.
+3. The server-side endpoint (`/api/tutor`) reads `GEMINI_API_KEY` exclusively on the server, sends only the active topic and relevant excerpt from `COA_Answer_Key_SR25.docx`, imposes no app-side request cap, and falls back cleanly to built-in lessons if no key is set.
 
