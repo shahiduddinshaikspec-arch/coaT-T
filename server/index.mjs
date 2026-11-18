@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handleTutorRequest } from './tutorHandler.mjs';
+import { handleSyncRequest } from './syncHandler.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,6 +27,11 @@ const server = http.createServer(async (req, res) => {
 
   if (urlPath === '/api/tutor' || urlPath === '/api/tutor/status') {
     await handleTutorRequest(req, res);
+    return;
+  }
+
+  if (urlPath === '/api/sync') {
+    await handleSyncRequest(req, res);
     return;
   }
 

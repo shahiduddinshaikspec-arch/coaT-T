@@ -1,12 +1,15 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
   Calculator,
   ClipboardCheck,
+  Cloud,
+  CloudOff,
   Cpu,
   EyeOff,
   GraduationCap,
   Home,
+  Loader2,
   RotateCcw,
   Search,
   Sparkles,
@@ -15,6 +18,7 @@ import { DisplayControls } from './components/DisplayControls';
 import { FocusTimer } from './components/FocusTimer';
 import { HomeView } from './components/HomeView';
 import type { JumpTarget } from './components/QuickJumpModal';
+import type { SyncState } from './components/SyncModal';
 import { findGlossaryEntry } from './data/glossary';
 import { LESSONS } from './data/lessons';
 import { NUMERICALS } from './data/numericals';
@@ -30,11 +34,15 @@ import type {
 import type { SmartRecommendation } from './utils/smartEngine';
 import {
   addUnique,
+  consumeSyncCodeFromUrl,
   createDefaultProgress,
   hasSavedSession,
   loadProgress,
+  loadSyncCode,
+  mergeProgressClient,
   removeItem,
   saveProgress,
+  saveSyncCode,
   toggleInArray,
 } from './utils/storage';
 import {
@@ -71,6 +79,25 @@ const SessionPlannerModal = lazy(() =>
 const QuickJumpModal = lazy(() =>
   import('./components/QuickJumpModal').then((m) => ({ default: m.QuickJumpModal }))
 );
+const SyncModal = lazy(() =>
+  import('./components/SyncModal').then((m) => ({ default: m.SyncModal }))
+);
+
+function studyDataSignature(p: StudyProgress): string {
+  return JSON.stringify({
+    examDateTimeIST: p.examDateTimeIST,
+    completedLessons: p.completedLessons,
+    masteredQuestions: p.masteredQuestions,
+    forgotQuestions: p.forgotQuestions,
+    masteredNumericals: p.masteredNumericals,
+    checkedHighYield: p.checkedHighYield,
+    checkedQuestions: p.checkedQuestions,
+    questionDrafts: p.questionDrafts,
+    questionSelfChecks: p.questionSelfChecks,
+    lastActivity: p.lastActivity,
+    resetAt: p.resetAt ?? 0,
+  });
+}
 
 const NAV_ITEMS: {
   id: AppView;
@@ -121,6 +148,217 @@ export function App() {
   const [quickJumpOpen, setQuickJumpOpen] = useState(false);
   const [tutorOpen, setTutorOpen] = useState(false);
   const [pendingTutorPrompt, setPendingTutorPrompt] = useState<string | null>(null);
+
+  // Always-On Phone <-> PC Cloud Sync
+  const [syncCode, setSyncCode] = useState<string>(() => consumeSyncCodeFromUrl() || loadSyncCode());
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [syncState, setSyncState] = useState<SyncState>('idle');
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const progressRef = useRef<StudyProgress>(progress);
+  progressRef.current = progress;
+  const skipNextPushRef = useRef(false);
+  const syncInFlightRef = useRef(false);
+  const lastDirtyAtRef = useRef(0);
+  const lastSyncedAtRef = useRef(0);
+
+  const mutateProgress = useCallback((updater: (prev: StudyProgress) => StudyProgress) => {
+    const now = Date.now();
+    lastDirtyAtRef.current = now;
+    setProgress((prev) => {
+      const next = updater(prev);
+      return { ...next, updatedAt: now };
+    });
+  }, []);
+
+  const pushProgress = useCallback(async (code: string, payload: StudyProgress) => {
+    if (!code) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setSyncState('offline');
+      return;
+    }
+    if (syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
+    setSyncState('syncing');
+
+    try {
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, progress: payload }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok) {
+        setSyncState('error');
+        setSyncError(data?.error || 'Could not reach cloud sync right now.');
+        return;
+      }
+
+      if (data.progress) {
+        const merged = mergeProgressClient(progressRef.current, data.progress as StudyProgress);
+        if (studyDataSignature(merged) !== studyDataSignature(progressRef.current)) {
+          skipNextPushRef.current = true;
+          setProgress(merged);
+        }
+      }
+
+      const now = Date.now();
+      lastSyncedAtRef.current = now;
+      setLastSyncedAt(now);
+      setSyncState('synced');
+      setSyncError(null);
+    } catch {
+      setSyncState(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error');
+      setSyncError('Cloud sync paused while offline. Your progress is safe locally.');
+    } finally {
+      syncInFlightRef.current = false;
+    }
+  }, []);
+
+  const pullAndMerge = useCallback(
+    async (code: string, options?: { pushIfLocalAhead?: boolean }) => {
+      if (!code) return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setSyncState('offline');
+        return;
+      }
+      if (syncInFlightRef.current) return;
+      syncInFlightRef.current = true;
+      setSyncState('syncing');
+
+      let shouldPushMerged: StudyProgress | null = null;
+
+      try {
+        const res = await fetch(`/api/sync?code=${encodeURIComponent(code)}`, {
+          cache: 'no-store',
+        });
+        const data = await res.json();
+        if (!res.ok || !data?.ok) {
+          setSyncState('error');
+          setSyncError(data?.error || 'Could not fetch cloud progress right now.');
+          return;
+        }
+
+        const local = progressRef.current;
+        if (data.found && data.progress) {
+          const remote = data.progress as StudyProgress;
+          const merged = mergeProgressClient(local, remote);
+          if (studyDataSignature(merged) !== studyDataSignature(local)) {
+            skipNextPushRef.current = true;
+            setProgress(merged);
+            setShowResumeBanner(false);
+          }
+          if (
+            options?.pushIfLocalAhead &&
+            studyDataSignature(merged) !== studyDataSignature(remote)
+          ) {
+            shouldPushMerged = { ...merged, updatedAt: Math.max(merged.updatedAt || 0, Date.now()) };
+          }
+        } else if (options?.pushIfLocalAhead) {
+          shouldPushMerged = { ...local, updatedAt: local.updatedAt || Date.now() };
+        }
+
+        const now = Date.now();
+        lastSyncedAtRef.current = now;
+        setLastSyncedAt(now);
+        setSyncState('synced');
+        setSyncError(null);
+      } catch {
+        setSyncState(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error');
+        setSyncError('Could not reach cloud sync right now. Local progress is safe.');
+      } finally {
+        syncInFlightRef.current = false;
+      }
+
+      if (shouldPushMerged) {
+        await pushProgress(code, shouldPushMerged);
+      }
+    },
+    [pushProgress]
+  );
+
+  // Initial sync + live background polling + focus/visibility/online listeners
+  useEffect(() => {
+    if (!syncCode) {
+      setSyncState('idle');
+      setSyncError(null);
+      return;
+    }
+
+    void pullAndMerge(syncCode, { pushIfLocalAhead: true });
+
+    const handleVisibleOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        void pullAndMerge(syncCode, { pushIfLocalAhead: false });
+      }
+    };
+
+    const handleOnline = () => {
+      if (lastDirtyAtRef.current > lastSyncedAtRef.current) {
+        void pushProgress(syncCode, progressRef.current);
+      } else {
+        void pullAndMerge(syncCode, { pushIfLocalAhead: true });
+      }
+    };
+
+    const handleOffline = () => {
+      setSyncState('offline');
+    };
+
+    window.addEventListener('focus', handleVisibleOrFocus);
+    document.addEventListener('visibilitychange', handleVisibleOrFocus);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        void pullAndMerge(syncCode, { pushIfLocalAhead: false });
+      }
+    }, 12000);
+
+    return () => {
+      window.removeEventListener('focus', handleVisibleOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibleOrFocus);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.clearInterval(intervalId);
+    };
+  }, [syncCode, pullAndMerge, pushProgress]);
+
+  // Debounced auto-push whenever local study progress changes
+  useEffect(() => {
+    if (!syncCode || !progress.updatedAt) return;
+    if (skipNextPushRef.current) {
+      skipNextPushRef.current = false;
+      return;
+    }
+
+    const timerId = window.setTimeout(() => {
+      void pushProgress(syncCode, progressRef.current);
+    }, 900);
+
+    return () => window.clearTimeout(timerId);
+  }, [progress.updatedAt, syncCode, pushProgress]);
+
+  const handleConnectSync = (code: string) => {
+    saveSyncCode(code);
+    setSyncCode(code);
+    setSyncError(null);
+  };
+
+  const handleDisconnectSync = () => {
+    saveSyncCode('');
+    setSyncCode('');
+    setSyncState('idle');
+    setLastSyncedAt(null);
+    setSyncError(null);
+  };
+
+  const handleSyncNow = () => {
+    if (!syncCode) return;
+    void pullAndMerge(syncCode, { pushIfLocalAhead: true });
+  };
 
   // Global Quick-Jump shortcut (Ctrl+K / Cmd+K or "/" outside text inputs)
   useEffect(() => {
@@ -195,7 +433,7 @@ export function App() {
   }, [progress.preferences.theme, progress.preferences.fontScale]);
 
   const recordActivity = (activity: LastActivity) => {
-    setProgress((prev) => ({ ...prev, lastActivity: activity }));
+    mutateProgress((prev) => ({ ...prev, lastActivity: activity }));
   };
 
   const handleUpdatePreferences = (patch: Partial<DisplayPreferences>) => {
@@ -367,25 +605,25 @@ export function App() {
 
   // Progress mutators
   const handleUpdateExamDateTime = (istValue: string) => {
-    setProgress((prev) => ({ ...prev, examDateTimeIST: istValue }));
+    mutateProgress((prev) => ({ ...prev, examDateTimeIST: istValue }));
   };
 
   const handleToggleLessonComplete = (lessonId: string) => {
-    setProgress((prev) => ({
+    mutateProgress((prev) => ({
       ...prev,
       completedLessons: toggleInArray(prev.completedLessons, lessonId),
     }));
   };
 
   const handleSaveDraft = (qid: string, text: string) => {
-    setProgress((prev) => ({
+    mutateProgress((prev) => ({
       ...prev,
       questionDrafts: { ...prev.questionDrafts, [qid]: text },
     }));
   };
 
   const handleToggleSelfCheck = (qid: string, pointIdx: number) => {
-    setProgress((prev) => {
+    mutateProgress((prev) => {
       const currentList = prev.questionSelfChecks[qid] || [];
       const nextList = currentList.includes(pointIdx)
         ? currentList.filter((i) => i !== pointIdx)
@@ -398,7 +636,7 @@ export function App() {
   };
 
   const handleMarkQuestionGotIt = (qid: string) => {
-    setProgress((prev) => ({
+    mutateProgress((prev) => ({
       ...prev,
       masteredQuestions: addUnique(prev.masteredQuestions, qid),
       checkedQuestions: addUnique(prev.checkedQuestions, qid),
@@ -407,7 +645,7 @@ export function App() {
   };
 
   const handleMarkQuestionForgot = (qid: string) => {
-    setProgress((prev) => ({
+    mutateProgress((prev) => ({
       ...prev,
       forgotQuestions: addUnique(prev.forgotQuestions, qid),
       masteredQuestions: removeItem(prev.masteredQuestions, qid),
@@ -415,7 +653,7 @@ export function App() {
   };
 
   const handleRemoveFromForgot = (qid: string) => {
-    setProgress((prev) => ({
+    mutateProgress((prev) => ({
       ...prev,
       forgotQuestions: removeItem(prev.forgotQuestions, qid),
     }));
@@ -423,7 +661,7 @@ export function App() {
 
   const handleToggleMasteredNumerical = (nid: string) => {
     const num = NUMERICALS.find((n) => n.id === nid);
-    setProgress((prev) => {
+    mutateProgress((prev) => {
       const nextNumericals = toggleInArray(prev.masteredNumericals, nid);
       const isNowMastered = nextNumericals.includes(nid);
       return {
@@ -438,14 +676,14 @@ export function App() {
   };
 
   const handleToggleHighYield = (id: string) => {
-    setProgress((prev) => ({
+    mutateProgress((prev) => ({
       ...prev,
       checkedHighYield: toggleInArray(prev.checkedHighYield, id),
     }));
   };
 
   const handleToggleQuestionChecked = (qid: string) => {
-    setProgress((prev) => ({
+    mutateProgress((prev) => ({
       ...prev,
       checkedQuestions: toggleInArray(prev.checkedQuestions, qid),
     }));
@@ -506,7 +744,7 @@ export function App() {
           aiTutorEnabled: Boolean(parsed.preferences?.aiTutorEnabled),
         },
       };
-      setProgress(merged);
+      mutateProgress(() => merged);
       return true;
     } catch {
       return false;
@@ -516,10 +754,17 @@ export function App() {
   const handleResetAllProgress = () => {
     if (
       window.confirm(
-        'Reset all locally saved study progress? Your exam date will reset to Thursday 10:00 AM IST.'
+        'Reset all saved study progress? Your exam date will reset to Thursday 10:00 AM IST.'
       )
     ) {
-      const fresh = createDefaultProgress();
+      const now = Date.now();
+      const fresh: StudyProgress = {
+        ...createDefaultProgress(),
+        preferences: progress.preferences,
+        resetAt: now,
+        updatedAt: now,
+      };
+      lastDirtyAtRef.current = now;
       setProgress(fresh);
       setShowResumeBanner(false);
       setView('home');
@@ -595,23 +840,59 @@ export function App() {
             </button>
           )}
 
-          {/* Right Controls: Quick Search + Optional AI Tutor + Reading Comfort + Calm Focus Timer */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Right Controls: Quick Search + Cloud Sync + Optional AI Tutor + Reading Comfort + Calm Focus Timer */}
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             <button
               type="button"
               onClick={() => setQuickJumpOpen(true)}
               aria-label="Search lessons, questions, and terms (Ctrl+K)"
               title="Quick Jump (Ctrl+K or /)"
-              className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+              className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 sm:px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
             >
               <Search className="h-3.5 w-3.5 text-slate-500" />
               <span className="hidden xl:inline font-mono text-[11px] text-slate-600">Ctrl+K</span>
             </button>
             <button
               type="button"
+              onClick={() => setSyncModalOpen(true)}
+              aria-label={
+                syncCode
+                  ? syncState === 'offline'
+                    ? 'Synced offline, open Phone and PC Cloud Sync'
+                    : 'Synced, open Phone and PC Cloud Sync'
+                  : 'Sync progress between Phone and PC'
+              }
+              title={
+                syncCode
+                  ? `Cloud Sync active (${syncCode})`
+                  : 'Sync progress automatically between Phone & PC'
+              }
+              className={`flex items-center gap-1.5 rounded-full border px-2 sm:px-2.5 py-1.5 text-xs sm:text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                syncCode
+                  ? syncState === 'offline' || syncState === 'error'
+                    ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                    : 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {syncState === 'syncing' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-600" />
+              ) : syncCode && syncState === 'offline' ? (
+                <CloudOff className="h-3.5 w-3.5 text-amber-700" />
+              ) : (
+                <Cloud
+                  className={`h-3.5 w-3.5 ${syncCode ? 'text-emerald-600' : 'text-slate-500'}`}
+                />
+              )}
+              <span className="hidden sm:inline lg:hidden xl:inline">
+                {syncCode ? 'Synced' : 'Sync'}
+              </span>
+            </button>
+            <button
+              type="button"
               onClick={() => setTutorOpen(true)}
               aria-label="AI Tutor, optional Gemini assistant"
-              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs sm:text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
+              className={`flex items-center gap-1.5 rounded-full border px-2 sm:px-2.5 py-1.5 text-xs sm:text-sm font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 progress.preferences.aiTutorEnabled
                   ? 'border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100/70'
                   : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
@@ -860,6 +1141,20 @@ export function App() {
             onToggleAiEnabled={(enabled) => handleUpdatePreferences({ aiTutorEnabled: enabled })}
             onUseBuiltInLesson={handleOpenLesson}
             onClose={() => setTutorOpen(false)}
+          />
+        )}
+
+        {syncModalOpen && (
+          <SyncModal
+            open={syncModalOpen}
+            syncCode={syncCode}
+            syncState={syncState}
+            lastSyncedAt={lastSyncedAt}
+            syncError={syncError}
+            onConnect={handleConnectSync}
+            onDisconnect={handleDisconnectSync}
+            onSyncNow={handleSyncNow}
+            onClose={() => setSyncModalOpen(false)}
           />
         )}
       </Suspense>

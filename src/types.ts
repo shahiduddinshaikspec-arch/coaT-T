@@ -184,4 +184,6 @@ export interface StudyProgress {
   questionSelfChecks: Record<string, number[]>;
   lastActivity: LastActivity | null;
   preferences: DisplayPreferences;
+  updatedAt?: number;
+  resetAt?: number;
 }

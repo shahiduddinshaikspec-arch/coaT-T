@@ -14,7 +14,7 @@ A calm, offline-first study web app built from `COA_Answer_Key_SR25.docx` for **
 - **“Explain it more simply” & Mini-Glossary:** Every lesson includes a plain-language re-explanation with decoded jargon, a fresh analogy, and one-step-at-a-time calculation reveals, plus tappable glossary terms (42 COA concepts with examples).
 - **Mark-Based Self-Check & Reading Comfort:** Self-check 2-, 5-, and 10-mark answers with calm missing-point suggestions, optional **Read this aloud** (browser Web Speech API), **Low-Distraction Focus View**, **Font-Size Controls** (`A / A+ / A++`), and **Calm Dark Theme**.
 - **“Forgot This” Review List & High-Yield Checklist:** Retry missed questions anytime, prioritize the 18 topics repeated across 5- and 10-mark sections, or browse and search all 90 questions.
-- **100% Local:** No accounts, no backend, no API keys, no external network calls. Lessons, typed answers, checklists, missed questions, and display preferences save automatically in your browser’s `localStorage` so you can always **Continue where you left off**.
+- **Offline-First + Optional Always-On Phone ↔ PC Sync:** Works 100% locally in `localStorage` with zero accounts. On Vercel, click **Sync** in the top bar, choose a private Sync Code once (or open the 1-tap auto-connect link `/?sync=<code>` on your other device), and completed lessons, quizzes, drafts, numericals, and checklists auto-sync and conflict-free merge across Phone & PC using Vercel Private Blob Storage (`@vercel/blob`).
 
 ## How to Run Locally
 

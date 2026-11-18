@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 // @ts-expect-error ESM server handler module
 import { handleTutorRequest } from './server/tutorHandler.mjs';
+// @ts-expect-error ESM server handler module
+import { handleSyncRequest } from './server/syncHandler.mjs';
 
 function tutorApiPlugin(): Plugin {
   const attachMiddleware = (middlewares: {
@@ -12,6 +14,10 @@ function tutorApiPlugin(): Plugin {
       const url = ((req as { url?: string }).url || '').split('?')[0];
       if (url === '/api/tutor' || url === '/api/tutor/status') {
         void handleTutorRequest(req, res);
+        return;
+      }
+      if (url === '/api/sync') {
+        void handleSyncRequest(req, res);
         return;
       }
       next();

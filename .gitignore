@@ -3,6 +3,7 @@ node_modules/
 dist/
 .vite/
 .vercel/
+.local-sync/
 
 # Local environment secrets (NEVER commit GEMINI_API_KEY)
 .env

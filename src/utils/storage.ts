@@ -170,10 +170,129 @@ export function loadProgress(): StudyProgress {
         focusView: Boolean(prefs.focusView),
         aiTutorEnabled: Boolean(prefs.aiTutorEnabled),
       },
+      updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : undefined,
+      resetAt: typeof parsed.resetAt === 'number' ? parsed.resetAt : undefined,
     };
   } catch {
     return fallback;
   }
+}
+
+const SYNC_CODE_KEY = 'coa-study-sprint-sync-code';
+
+export function normalizeSyncCode(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]/g, '')
+    .slice(0, 48);
+}
+
+export function loadSyncCode(): string {
+  try {
+    return normalizeSyncCode(window.localStorage.getItem(SYNC_CODE_KEY) || '');
+  } catch {
+    return '';
+  }
+}
+
+export function saveSyncCode(code: string): void {
+  try {
+    const clean = normalizeSyncCode(code);
+    if (clean) {
+      window.localStorage.setItem(SYNC_CODE_KEY, clean);
+    } else {
+      window.localStorage.removeItem(SYNC_CODE_KEY);
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+/**
+ * Checks if the page was opened via a 1-tap auto-connect link like ?sync=shahid-coa.
+ * Saves the sync code locally and removes ?sync= from the URL cleanly.
+ */
+export function consumeSyncCodeFromUrl(): string {
+  try {
+    const url = new URL(window.location.href);
+    const raw = url.searchParams.get('sync');
+    if (!raw) return '';
+    const clean = normalizeSyncCode(raw);
+    if (clean.length >= 4) {
+      saveSyncCode(clean);
+      url.searchParams.delete('sync');
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      return clean;
+    }
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+function unionArr(a: string[] | undefined, b: string[] | undefined): string[] {
+  return Array.from(new Set([...(a || []), ...(b || [])]));
+}
+
+export function mergeProgressClient(local: StudyProgress, remote: StudyProgress): StudyProgress {
+  const localUpdated = local.updatedAt || 0;
+  const remoteUpdated = remote.updatedAt || 0;
+  const localReset = local.resetAt || 0;
+  const remoteReset = remote.resetAt || 0;
+
+  if (remoteReset > localUpdated) {
+    return { ...remote, preferences: local.preferences };
+  }
+  if (localReset > remoteUpdated) {
+    return local;
+  }
+
+  const remoteNewer = remoteUpdated >= localUpdated;
+  const newer = remoteNewer ? remote : local;
+  const older = remoteNewer ? local : remote;
+
+  const mergedDrafts: Record<string, string> = { ...(older.questionDrafts || {}) };
+  for (const [k, v] of Object.entries(newer.questionDrafts || {})) {
+    if (typeof v === 'string' && (v.trim().length > 0 || !mergedDrafts[k])) {
+      mergedDrafts[k] = v;
+    }
+  }
+
+  const mergedSelfChecks: Record<string, number[]> = {};
+  const allCheckKeys = new Set([
+    ...Object.keys(older.questionSelfChecks || {}),
+    ...Object.keys(newer.questionSelfChecks || {}),
+  ]);
+  for (const k of allCheckKeys) {
+    mergedSelfChecks[k] = Array.from(
+      new Set([...(older.questionSelfChecks?.[k] || []), ...(newer.questionSelfChecks?.[k] || [])])
+    ).sort((x, y) => x - y);
+  }
+
+  const newerForgot = new Set(newer.forgotQuestions || []);
+  const newerMastered = new Set(newer.masteredQuestions || []);
+
+  return {
+    examDateTimeIST: newer.examDateTimeIST || local.examDateTimeIST,
+    completedLessons: unionArr(local.completedLessons, remote.completedLessons),
+    masteredQuestions: unionArr(local.masteredQuestions, remote.masteredQuestions).filter(
+      (id) => !newerForgot.has(id)
+    ),
+    forgotQuestions: unionArr(local.forgotQuestions, remote.forgotQuestions).filter(
+      (id) => !newerMastered.has(id)
+    ),
+    masteredNumericals: unionArr(local.masteredNumericals, remote.masteredNumericals),
+    checkedHighYield: unionArr(local.checkedHighYield, remote.checkedHighYield),
+    checkedQuestions: unionArr(local.checkedQuestions, remote.checkedQuestions),
+    questionDrafts: mergedDrafts,
+    questionSelfChecks: mergedSelfChecks,
+    lastActivity: newer.lastActivity || older.lastActivity || null,
+    // Keep each device's local comfort preferences (dark mode / font size / focus view) independent
+    preferences: local.preferences,
+    updatedAt: Math.max(localUpdated, remoteUpdated),
+    resetAt: Math.max(localReset, remoteReset) || undefined,
+  };
 }
 
 export function saveProgress(progress: StudyProgress): void {
